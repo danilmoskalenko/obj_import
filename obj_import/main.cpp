@@ -30,6 +30,7 @@ const unsigned int SCR_HEIGHT = 1080;
 
 // Shadow map dimensions
 const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
+const int SHADOW_TEX_UNIT = 10;
 
 // Camera
 Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
@@ -432,9 +433,10 @@ int main()
 
       glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
       glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+      glEnable(GL_POLYGON_OFFSET_FILL);
+      glPolygonOffset(1.1f, 4.0f);
       glClear(GL_DEPTH_BUFFER_BIT);
       glm::vec3 sceneCenter = ComputeSceneCenter();
-      std::cout << "sceneCenter: " << glm::to_string(sceneCenter) << std::endl;
       glm::mat4 lightProjection, lightView, lightSpaceMatrix;
 
       if (lightingMode == DIRECTIONAL) {
@@ -446,7 +448,6 @@ int main()
          lightView = glm::lookAt(sceneCenter + glm::vec3(0.0f, 2.0f, 0.0f), sceneCenter, glm::vec3(0.0f, 1.0f, 0.0f));
       }
       lightSpaceMatrix = lightProjection * lightView;
-      std::cout << "lightSpaceMatrix: " << glm::to_string(lightSpaceMatrix) << std::endl;
 
       depthShader.use();
       depthShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
@@ -477,6 +478,7 @@ int main()
          obj.model.Draw(depthShader);
       }
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      glDisable(GL_POLYGON_OFFSET_FILL);
 
       glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
       glClearColor(backgroundColor.r, backgroundColor.g, backgroundColor.b, 1.0f);
@@ -505,9 +507,9 @@ int main()
       ourShader.setFloat("linear", linear);
       ourShader.setFloat("quadratic", quadratic);
       ourShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
-      glActiveTexture(GL_TEXTURE1);
+      glActiveTexture(GL_TEXTURE0 + SHADOW_TEX_UNIT);
       glBindTexture(GL_TEXTURE_2D, depthMap);
-      ourShader.setInt("shadowMap", 1);
+      ourShader.setInt("shadowMap", SHADOW_TEX_UNIT);
 
       for (const SceneObject& obj : sceneObjects) {
          glm::mat4 model = glm::mat4(1.0f);
@@ -532,7 +534,7 @@ int main()
          model = glm::scale(model, obj.scale);
 
          ourShader.setMat4("model", model);
-         obj.model.Draw(ourShader);
+         obj.model.Draw(ourShader, SHADOW_TEX_UNIT);
       }
 
       if (lightingMode == POINT || lightingMode == SPOTLIGHT || lightingMode == DIRECTIONAL) {

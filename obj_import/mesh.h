@@ -57,7 +57,7 @@ public:
    }
 
    // Рендеринг меша
-   void Draw(const Shader& shader) const
+   void Draw(const Shader& shader, int reservedTextureUnit = -1) const
    {
       // Связываем соответствующие текстуры
       unsigned int diffuseNr = 1;
@@ -66,8 +66,10 @@ public:
       unsigned int heightNr = 1;
       for (unsigned int i = 0; i < textures.size(); i++)
       {
-         glActiveTexture(GL_TEXTURE0 + i); // перед связыванием активируем нужный текстурный юнит
-
+         unsigned int unit = i;
+         if (reservedTextureUnit >= 0 && unit >= (unsigned int)reservedTextureUnit)
+            unit++;
+         glActiveTexture(GL_TEXTURE0 + unit); // перед связыванием активируем нужный текстурный юнит
          // Получаем номер текстуры (номер N в diffuse_textureN)
          string number;
          string name = textures[i].type;
@@ -81,7 +83,7 @@ public:
             number = std::to_string(heightNr++); // конвертируем unsigned int в строку
 
          // Теперь устанавливаем сэмплер на нужный текстурный юнит
-         glUniform1i(glGetUniformLocation(shader.ID, (name + number).c_str()), i);
+         glUniform1i(glGetUniformLocation(shader.ID, (name + number).c_str()), unit);
          // и связываем текстуру
          glBindTexture(GL_TEXTURE_2D, textures[i].id);
       }

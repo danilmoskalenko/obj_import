@@ -39,10 +39,10 @@ public:
    }
 
    // Отрисовываем модель, а значит и все её меши
-   void Draw(const Shader& shader) const
+   void Draw(const Shader& shader, int reservedTextureUnit = -1) const
    {
       for (unsigned int i = 0; i < meshes.size(); i++)
-         meshes[i].Draw(shader);
+         meshes[i].Draw(shader, reservedTextureUnit);
    }
 
 private:
