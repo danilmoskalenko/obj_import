@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <iostream>
 #include <vector>
+#include "geometry.h"
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
@@ -49,6 +50,8 @@ LightingMode lightingMode = NONE;
 enum CameraMode { FIGURE_ROTATION, STRAFE, QUATERNION, BLENDER };
 CameraMode cameraMode = BLENDER;
 
+const glm::vec3 INITIAL_LIGHT_POS(0.0f, 10.0f, 0.0f); // Изначальная позиция света
+
 // Object rotation for FIGURE_ROTATION mode
 glm::vec3 objectRotation(0.0f);
 glm::quat objectOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -80,25 +83,28 @@ glm::vec3 ComputeSceneCenter() {
     return validObjects > 0 ? sum / static_cast<float>(validObjects) : glm::vec3(0.0f);
 }
 
-float cubeVertices[] = {
-    -0.5f, -0.5f, -0.5f,
-     0.5f, -0.5f, -0.5f,
-     0.5f,  0.5f,  -0.5f,
-    -0.5f,  0.5f,  -0.5f,
-    -0.5f, -0.5f,  0.5f,
-     0.5f, -0.5f,  0.5f,
-     0.5f,  0.5f,  0.5f,
-    -0.5f,  0.5f,  0.5f
-};
 
-unsigned int cubeIndices[] = {
-    0, 1, 2, 2, 3, 0,
-    1, 5, 6, 6, 2, 1,
-    5, 4, 7, 7, 6, 5,
-    4, 0, 3, 3, 7, 4,
-    3, 2, 6, 6, 7, 3,
-    4, 5, 1, 1, 0, 4
-};
+
+
+//float cubeVertices[] = {
+//    -0.5f, -0.5f, -0.5f,
+//     0.5f, -0.5f, -0.5f,
+//     0.5f,  0.5f,  -0.5f,
+//    -0.5f,  0.5f,  -0.5f,
+//    -0.5f, -0.5f,  0.5f,
+//     0.5f, -0.5f,  0.5f,
+//     0.5f,  0.5f,  0.5f,
+//    -0.5f,  0.5f,  0.5f
+//};
+//
+//unsigned int cubeIndices[] = {
+//    0, 1, 2, 2, 3, 0,
+//    1, 5, 6, 6, 2, 1,
+//    5, 4, 7, 7, 6, 5,
+//    4, 0, 3, 3, 7, 4,
+//    3, 2, 6, 6, 7, 3,
+//    4, 5, 1, 1, 0, 4
+//};
 
 int main()
 {
@@ -216,21 +222,44 @@ int main()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
     glBindVertexArray(0);
 
-    GLuint lightVAO, lightVBO, lightEBO;
-    glGenVertexArrays(1, &lightVAO);
-    glGenBuffers(1, &lightVBO);
-    glGenBuffers(1, &lightEBO);
+    
+    
+    // Генерация VAO и VBO для сферы света
+    
+    std::vector<float> sphereVertices;
+    std::vector<unsigned int> sphereIndices;
+    GenerateSphere(0.5f, 32, 16, sphereVertices, sphereIndices); // радиус и детализация
+    
+    GLuint sphereVAO, sphereVBO, sphereEBO;
+    glGenVertexArrays(1, &sphereVAO);
+    glGenBuffers(1, &sphereVBO);
+    glGenBuffers(1, &sphereEBO);
 
-    glBindVertexArray(lightVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, lightVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, lightEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cubeIndices), cubeIndices, GL_STATIC_DRAW);
+    glBindVertexArray(sphereVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, sphereVBO);
+    glBufferData(GL_ARRAY_BUFFER, sphereVertices.size() * sizeof(float), sphereVertices.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphereEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphereIndices.size() * sizeof(unsigned int), sphereIndices.data(), GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glBindVertexArray(0);
 
-    glm::vec3 lightPos(1.2f, 7.0f, 2.0f);
+    /*здесь была отрисовка куба*/
+    //GLuint lightVAO, lightVBO, lightEBO;
+    //glGenVertexArrays(1, &lightVAO);
+    //glGenBuffers(1, &lightVBO);
+    //glGenBuffers(1, &lightEBO);
+
+    //glBindVertexArray(lightVAO);
+    //glBindBuffer(GL_ARRAY_BUFFER, lightVBO);
+    //glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
+    //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, lightEBO);
+    //glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cubeIndices), cubeIndices, GL_STATIC_DRAW);
+    //glEnableVertexAttribArray(0);
+    //glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    //glBindVertexArray(0);
+
+    glm::vec3 lightPos = INITIAL_LIGHT_POS;
     glm::vec3 lightDir(0.0f, -1.0f, 0.0f);
     glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
     glm::vec3 backgroundColor(0.05f, 0.05f, 0.05f);
@@ -319,14 +348,37 @@ int main()
                 glClearColor(backgroundColor.r, backgroundColor.g, backgroundColor.b, 1.0f);
             }
         }
+
+        // Добавляем управление позицией света для соответствующих режимов
+        if (lightingMode == POINT || lightingMode == SPOTLIGHT || lightingMode == DIRECTIONAL) {
+            ImGui::Text("Light Location");
+            // Используем временные переменные для хранения значений
+            static float pos[3] = { lightPos.x, lightPos.y, lightPos.z };
+            
+            // Создаем поля ввода для каждой координаты
+            if (ImGui::DragFloat("Light X", &pos[0], 0.1f))
+                lightPos.x = pos[0];
+            if (ImGui::DragFloat("Light Y", &pos[1], 0.1f))
+                lightPos.y = pos[1];
+            if (ImGui::DragFloat("Light Z", &pos[2], 0.1f))
+                lightPos.z = pos[2];
+            
+            // Кнопка сброса позиции света
+            if (ImGui::Button("Reset Light Location")) {
+                lightPos = INITIAL_LIGHT_POS;
+                pos[0] = lightPos.x;
+                pos[1] = lightPos.y;
+                pos[2] = lightPos.z;
+            }
+            
+            ImGui::Separator();
+        }
+
+        // Остальные настройки освещения
         ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Diffuse Strength", &diffuseStrength, 0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Specular Strength", &specularStrength, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Shininess", &shininess, 2.0f, 64.0f, "%.1f");
-        if (lightingMode == SPOTLIGHT) {
-            ImGui::SliderFloat("Spotlight CutOff", &spotCutOff, 0.0f, 1.0f, "%.2f");
-            ImGui::SliderFloat("Spotlight Outer CutOff", &spotOuterCutOff, 0.0f, 1.0f, "%.2f");
-        }
 
         ImGui::Text("Color Settings");
         ImGui::Separator();
@@ -536,8 +588,8 @@ int main()
             lightModel = glm::translate(lightModel, lightPos);
             lightShader.setMat4("model", lightModel);
             lightShader.setVec3("lightColor", lightColor);
-            glBindVertexArray(lightVAO);
-            glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
+            glBindVertexArray(sphereVAO);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sphereIndices.size()), GL_UNSIGNED_INT, 0);
             glBindVertexArray(0);
         }
 
@@ -640,9 +692,9 @@ int main()
 
     glDeleteFramebuffers(1, &depthMapFBO);
     glDeleteTextures(1, &depthMap);
-    glDeleteVertexArrays(1, &lightVAO);
-    glDeleteBuffers(1, &lightVBO);
-    glDeleteBuffers(1, &lightEBO);
+    glDeleteVertexArrays(1, &sphereVAO);
+    glDeleteBuffers(1, &sphereVBO);
+    glDeleteBuffers(1, &sphereEBO);
     glDeleteVertexArrays(1, &faceNormalsVAO);
     glDeleteBuffers(1, &faceNormalsVBO);
     glDeleteVertexArrays(1, &vertexNormalsVAO);
