@@ -22,6 +22,7 @@ uniform float specularStrength;
 uniform float shininess;
 uniform float spotCutOff;
 uniform float spotOuterCutOff;
+uniform bool noTextures;
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 lightDirNorm, vec3 norm)
 {
@@ -55,7 +56,15 @@ void main()
     if (length(norm) < 0.001) {
         norm = vec3(0.0, 1.0, 0.0);
     }
-    vec4 texColor = texture(texture_diffuse1, TexCoords);
+
+    // Получаем базовый цвет из текстуры или из uniform-переменной
+    vec4 texColor;
+    if (noTextures) {
+        texColor = vec4(objectColor, 1.0);
+    } else {
+        texColor = texture(texture_diffuse1, TexCoords);
+    }
+
     vec3 result = vec3(0.0);
 
     if (lightingMode == 0) { // NONE

@@ -70,6 +70,8 @@ int selectedObjectIndex = -1;
 
 bool editSceneMode = true;
 
+bool noTextures = false; // Флаг для отключения текстур
+
 glm::vec3 ComputeSceneCenter() {
     if (sceneObjects.empty()) return glm::vec3(0.0f);
     glm::vec3 sum(0.0f);
@@ -327,6 +329,10 @@ int main()
             ImGui::Text("Camera controls disabled in object mode)");
         }
 
+        ImGui::Text("Rendering Settings");
+        ImGui::Separator();
+        ImGui::Checkbox("No Textures", &noTextures);
+
         ImGui::Text("Display Settings");
         ImGui::Separator();
         const char* displayItems[] = { "Normal", "Face Normals", "Vertex Normals" };
@@ -384,6 +390,8 @@ int main()
         ImGui::Separator();
         ImGui::ColorEdit3("Object Color", (float*)&objectColor);
         ImGui::ColorEdit3("Background Color", (float*)&backgroundColor);
+
+
 
         ImGui::Text("Model Loading");
         ImGui::Separator();
@@ -553,6 +561,7 @@ int main()
         glActiveTexture(GL_TEXTURE0 + SHADOW_TEX_UNIT);
         glBindTexture(GL_TEXTURE_2D, depthMap);
         ourShader.setInt("shadowMap", SHADOW_TEX_UNIT);
+        ourShader.setBool("noTextures", noTextures);
 
         for (const SceneObject& obj : sceneObjects) {
             glm::mat4 model = glm::mat4(1.0f);

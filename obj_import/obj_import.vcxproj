@@ -159,6 +159,9 @@
     <ClInclude Include="shader_m.h" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="1.model_loading.fs" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
