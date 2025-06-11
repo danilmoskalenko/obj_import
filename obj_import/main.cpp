@@ -30,7 +30,7 @@ const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
 const int SHADOW_TEX_UNIT = 1;
 
 // Camera
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Camera camera;
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -46,8 +46,16 @@ DisplayMode displayMode = NORMAL_MODE;
 enum LightingMode { NONE, NO_LIGHTING, AMBIENT, SPOTLIGHT, DIRECTIONAL, POINT };
 LightingMode lightingMode = NONE;
 
+// Shadow modes
+enum ShadowMode { SHADOW_NONE, SHADOW_MAPPING, SHADOW_RAYTRACING };
+ShadowMode shadowMode = SHADOW_NONE;
+
+// Типы используемых нормалей для теней
+enum ShadowNormalType { SHADOW_VERTEX_NORMALS, SHADOW_FACE_NORMALS };
+ShadowNormalType shadowNormalType = SHADOW_VERTEX_NORMALS;
+
 // Camera modes
-enum CameraMode { FIGURE_ROTATION, STRAFE, QUATERNION, BLENDER };
+using CameraMode = ::CameraMode; // Используем enum из camera.h
 CameraMode cameraMode = BLENDER;
 
 const glm::vec3 INITIAL_LIGHT_POS(0.0f, 10.0f, 0.0f); // Изначальная позиция света
@@ -267,6 +275,7 @@ int main()
     glm::vec3 backgroundColor(0.05f, 0.05f, 0.05f);
     glm::vec3 objectColor(1.0f, 1.0f, 1.0f);
     float ambientStrength = 0.2f;
+    float lightIntensity = 1.0f;
     float diffuseStrength = 1.0f;
     float specularStrength = 0.2f;
     float shininess = 8.0f;
@@ -290,6 +299,12 @@ int main()
         ImGui::Begin("Control Panel");
         ImGui::Text("Camera Settings");
         ImGui::Separator();
+        if (editSceneMode) {
+           ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)",
+              camera.Position.x, camera.Position.y, camera.Position.z);
+           ImGui::Text("Camera Target: (%.2f, %.2f, %.2f)",
+              camera.Target.x, camera.Target.y, camera.Target.z);
+        }
 
         ImGui::Checkbox("Edit Whole Scene", &editSceneMode);
 
@@ -298,8 +313,19 @@ int main()
         if (editSceneMode) {
             const char* cameraItems[] = { "Scene Rotation", "Strafe", "Quaternion", "Blender" };
             static int cameraCurrent = static_cast<int>(cameraMode);
+
             if (ImGui::Combo("Camera Mode", &cameraCurrent, cameraItems, IM_ARRAYSIZE(cameraItems))) {
-                cameraMode = static_cast<CameraMode>(cameraCurrent);
+               // Сохраняем состояние текущего режима перед переключением
+               camera.SaveStateForMode(cameraMode);
+
+               // Переключаем режим
+               cameraMode = static_cast<CameraMode>(cameraCurrent);
+
+               // Восстанавливаем состояние для нового режима
+               camera.RestoreStateForMode(cameraMode);
+
+               //camera.SaveCurrentState();
+
                 if (cameraMode != FIGURE_ROTATION) {
                     objectRotation = glm::vec3(0.0f);
                 }
@@ -308,7 +334,13 @@ int main()
                 }
             }
             if (ImGui::Button("Reset Camera")) {
-                camera.Reset();
+               if (cameraMode == BLENDER) {
+                  camera.Reset();
+                  camera.Target = ComputeSceneCenter();
+               }
+               else {
+                  camera.RestoreInitialState();
+               }
             }
             switch (cameraMode) {
             case FIGURE_ROTATION:
@@ -382,6 +414,7 @@ int main()
 
         // Остальные настройки освещения
         ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Light Intensity", &lightIntensity, 0.0f, 5.0f, "%.2f"); 
         ImGui::SliderFloat("Diffuse Strength", &diffuseStrength, 0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Specular Strength", &specularStrength, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Shininess", &shininess, 2.0f, 64.0f, "%.1f");
@@ -391,7 +424,54 @@ int main()
         ImGui::ColorEdit3("Object Color", (float*)&objectColor);
         ImGui::ColorEdit3("Background Color", (float*)&backgroundColor);
 
+        // Добавляем после настроек освещения
+        ImGui::Text("Shadow Settings");
+        ImGui::Separator();
+        
+        // Отключаем элементы управления тенями, если не выбран подходящий режим освещения
+        bool shadowControlsEnabled = (lightingMode == POINT || lightingMode == SPOTLIGHT || lightingMode == DIRECTIONAL);
+        if (!shadowControlsEnabled) {
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+        }
 
+        bool shadowMapping = (shadowMode == SHADOW_MAPPING);
+        bool rayTracing = (shadowMode == SHADOW_RAYTRACING);
+
+        // Shadow Mapping checkbox
+        if (ImGui::Checkbox("Shadow Mapping", &shadowMapping)) {
+            if (shadowMapping && shadowControlsEnabled) {
+                shadowMode = SHADOW_MAPPING;
+            } else {
+                shadowMode = SHADOW_NONE;
+            }
+        }
+
+        // Добавляем выбор типа нормалей если включен Shadow Mapping
+        if (shadowMode == SHADOW_MAPPING) {
+            ImGui::Indent();
+            const char* normalItems[] = { "Vertex Normals", "Face Normals" };
+            static int normalCurrent = static_cast<int>(shadowNormalType);
+            if (ImGui::Combo("Shadow Normal Type", &normalCurrent, normalItems, IM_ARRAYSIZE(normalItems))) {
+                shadowNormalType = static_cast<ShadowNormalType>(normalCurrent);
+            }
+            ImGui::Unindent();
+        }
+
+        // Ray Tracing checkbox
+        if (ImGui::Checkbox("Ray Tracing", &rayTracing)) {
+            if (rayTracing && shadowControlsEnabled) {
+                shadowMode = SHADOW_RAYTRACING;
+            } else {
+                shadowMode = SHADOW_NONE;
+            }
+        }
+
+        if (!shadowControlsEnabled) {
+            ImGui::PopStyleVar();
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Shadow settings are only available for Point, Spotlight and Directional lights");
+            }
+        }
 
         ImGui::Text("Model Loading");
         ImGui::Separator();
@@ -499,7 +579,7 @@ int main()
 
         if (lightingMode == DIRECTIONAL || lightingMode == POINT || lightingMode == SPOTLIGHT) {
             lightProjection = glm::perspective(glm::radians(90.0f), (float)SHADOW_WIDTH / (float)SHADOW_HEIGHT, 0.1f, 20.0f);
-            lightView = glm::lookAt(lightPos, sceneCenter, glm::vec3(0.0f, 1.0f, 0.0f));
+           lightView = glm::lookAt(lightPos, sceneCenter, glm::vec3(0.0f, 1.0f, 0.0f));
         }
         lightSpaceMatrix = lightProjection * lightView;
 
@@ -548,7 +628,7 @@ int main()
         ourShader.setVec3("viewPos", camera.Position);
         ourShader.setVec3("lightPos", lightPos);
         ourShader.setVec3("lightDir", glm::normalize(lightDir));
-        ourShader.setVec3("lightColor", lightColor);
+        ourShader.setVec3("lightColor", lightColor * lightIntensity);
         ourShader.setVec3("backgroundColor", backgroundColor);
         ourShader.setVec3("objectColor", objectColor);
         ourShader.setFloat("ambientStrength", ambientStrength);
@@ -562,6 +642,8 @@ int main()
         glBindTexture(GL_TEXTURE_2D, depthMap);
         ourShader.setInt("shadowMap", SHADOW_TEX_UNIT);
         ourShader.setBool("noTextures", noTextures);
+        ourShader.setBool("useShadowMapping", shadowMode == SHADOW_MAPPING);
+        ourShader.setBool("useFaceNormals", shadowMode == SHADOW_MAPPING && shadowNormalType == SHADOW_FACE_NORMALS);
 
         for (const SceneObject& obj : sceneObjects) {
             glm::mat4 model = glm::mat4(1.0f);
@@ -802,6 +884,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     if (editSceneMode && selectedObjectIndex == -1) {
         if (cameraMode == BLENDER) {
             if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) {
+                //camera.SaveCurrentState(); // Сохраняем текущее состояние камеры перед изменением
                 if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
                     camera.ProcessMousePan(xoffset, yoffset);
                 }

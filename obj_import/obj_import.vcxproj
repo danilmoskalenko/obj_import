@@ -161,6 +161,15 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="1.model_loading.fs" />
+    <None Include="1.model_loading.vs" />
+    <None Include="depth.fs" />
+    <None Include="depth.vs" />
+    <None Include="light_fragment_shader.glsl" />
+    <None Include="light_vertex_shader.glsl" />
+    <None Include="line_fragment_shader.glsl" />
+    <None Include="line_vertex_shader.glsl" />
+    <None Include="v_line_fragment_shader.glsl" />
+    <None Include="v_line_vertex_shader.glsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

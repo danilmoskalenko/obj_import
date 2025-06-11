@@ -70,5 +70,32 @@
     <None Include="1.model_loading.fs">
       <Filter>Файлы ресурсов</Filter>
     </None>
+    <None Include="1.model_loading.vs">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
+    <None Include="depth.fs">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
+    <None Include="depth.vs">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
+    <None Include="light_fragment_shader.glsl">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
+    <None Include="light_vertex_shader.glsl">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
+    <None Include="line_fragment_shader.glsl">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
+    <None Include="line_vertex_shader.glsl">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
+    <None Include="v_line_fragment_shader.glsl">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
+    <None Include="v_line_vertex_shader.glsl">
+      <Filter>Файлы ресурсов</Filter>
+    </None>
   </ItemGroup>
 </Project>

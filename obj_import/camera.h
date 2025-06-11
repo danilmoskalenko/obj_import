@@ -5,7 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
-
+#include <map>
 #include <vector>
 
 enum Camera_Movement {
@@ -15,6 +15,13 @@ enum Camera_Movement {
    RIGHT,
    UP,
    DOWN
+};
+// Добавляем определение CameraMode
+enum CameraMode {
+   FIGURE_ROTATION,  // Режим вращения всей сцены
+   STRAFE,          // Режим стрейфа
+   QUATERNION,      // Режим кватернионного вращения
+   BLENDER          // Режим в стиле Blender
 };
 
 const float YAW = -90.0f;
@@ -26,6 +33,18 @@ const float ZOOM = 45.0f;
 class Camera
 {
 public:
+   struct CameraState {
+       glm::vec3 Position;
+       glm::vec3 Front;
+       glm::vec3 Up;
+       glm::vec3 Right;
+       glm::vec3 WorldUp;
+       glm::vec3 Target;
+       float Yaw;
+       float Pitch;
+       float Zoom;
+   };
+
    glm::vec3 Position;
    glm::vec3 Front;
    glm::vec3 Up;
@@ -45,6 +64,9 @@ public:
       Yaw = yaw;
       Pitch = pitch;
       updateCameraVectors();
+
+      // Сохраняем начальное состояние
+      SaveInitialState();
    }
 
    glm::mat4 GetViewMatrix()
@@ -127,16 +149,21 @@ public:
       yoffset *= MouseSensitivity * 0.01f;
 
       glm::vec3 prevPosition = Position;
+      glm::vec3 prevTarget = Target;  // Сохраняем предыдущий Target
+
       Position -= Right * xoffset;
       Position += Up * yoffset;
+      Target -= Right * xoffset;      // Перемещаем Target вместе с камерой
+      Target += Up * yoffset;         // Перемещаем Target вместе с камерой
 
       // Проверка на валидность позиции
-      if (!std::isfinite(Position.x) || !std::isfinite(Position.y) || !std::isfinite(Position.z)) {
+      if (!std::isfinite(Position.x) || !std::isfinite(Position.y) || !std::isfinite(Position.z) ||
+         !std::isfinite(Target.x) || !std::isfinite(Target.y) || !std::isfinite(Target.z)) {
          Position = prevPosition;
+         Target = prevTarget;
          return;
       }
 
-      Target = Position + Front;
       updateCameraVectors();
    }
 
@@ -154,16 +181,58 @@ public:
       Position = Target + direction * distance;
    }
 
-   void Reset()
-   {
-      Position = glm::vec3(0.0f, 0.0f, 10.0f);
-      Yaw = YAW;
-      Pitch = PITCH;
-      Zoom = ZOOM;
+   //сохранения состояний
+   void SaveInitialState() {
+      initialState = {Position, Front, Up, Right, WorldUp, Target, Yaw, Pitch, Zoom};
+   }
+
+   void SaveCurrentState() {
+      previousState = {Position, Front, Up, Right, WorldUp, Target, Yaw, Pitch, Zoom};
+   }
+
+   void SaveStateForMode(CameraMode mode) {
+      modeStates[mode] = { Position, Front, Up, Right, WorldUp, Target, Yaw, Pitch, Zoom };
+   }
+
+   void RestoreInitialState() {
+      Position = initialState.Position;
+      Front = initialState.Front;
+      Up = initialState.Up;
+      Right = initialState.Right;
+      WorldUp = initialState.WorldUp;
+      Target = initialState.Target;
+      Yaw = initialState.Yaw;
+      Pitch = initialState.Pitch;
+      Zoom = initialState.Zoom;
       updateCameraVectors();
    }
 
+   void RestoreStateForMode(CameraMode mode) {
+      auto it = modeStates.find(mode);
+      if (it != modeStates.end()) {
+         CameraState& state = it->second;
+         Position = state.Position;
+         Front = state.Front;
+         Up = state.Up;
+         Right = state.Right;
+         WorldUp = state.WorldUp;
+         Target = state.Target;
+         Yaw = state.Yaw;
+         Pitch = state.Pitch;
+         Zoom = state.Zoom;
+         updateCameraVectors();
+      }
+   }
+
+   void Reset()
+   {
+      RestoreInitialState();
+   }
+
 private:
+   CameraState initialState;
+   CameraState previousState;
+   std::map<CameraMode, CameraState> modeStates;  // Добавляем хранилище состояний для разных режимов
    void updateCameraVectors()
    {
       glm::vec3 front;

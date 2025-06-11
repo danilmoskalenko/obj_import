@@ -23,6 +23,8 @@ uniform float shininess;
 uniform float spotCutOff;
 uniform float spotOuterCutOff;
 uniform bool noTextures;
+uniform bool useShadowMapping;
+uniform bool useFaceNormals;
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 lightDirNorm, vec3 norm)
 {
@@ -56,7 +58,16 @@ void main()
     if (length(norm) < 0.001) {
         norm = vec3(0.0, 1.0, 0.0);
     }
-
+    vec3 effectiveNormal; // Нормали, которые будут использоваться для вычисления теней
+    if (useFaceNormals) {
+      // Ищем центр текущего треугольника и его нормаль
+      vec3 v1 = dFdx(FragPos);
+      vec3 v2 = dFdy(FragPos);
+      effectiveNormal = normalize(cross(v1, v2));
+    } else {
+      // Используем уже имеющиеся vertex normals из меша
+      effectiveNormal = normalize(Normal);
+    }
     // Получаем базовый цвет из текстуры или из uniform-переменной
     vec4 texColor;
     if (noTextures) {
@@ -104,7 +115,10 @@ void main()
             specular = specularStrength * spec * effectiveLightColor;
         }
 
-        float shadow = (lightingMode == 3 || lightingMode == 4 || lightingMode == 5) ? ShadowCalculation(FragPosLightSpace, lightDirNorm, norm) : 0.0;
+        //float shadow = (lightingMode == 3 || lightingMode == 4 || lightingMode == 5) ? ShadowCalculation(FragPosLightSpace, lightDirNorm, norm) : 0.0;
+        
+        float shadow = ((lightingMode == 3 || lightingMode == 4 || lightingMode == 5) && useShadowMapping) ? 
+            ShadowCalculation(FragPosLightSpace, lightDirNorm, effectiveNormal) : 0.0;
         if (lightingMode == 3) { // SPOTLIGHT
             float theta = dot(lightDirNorm, normalize(-lightDir));
             float epsilon = spotCutOff - spotOuterCutOff;
