@@ -25,6 +25,12 @@ uniform float spotOuterCutOff;
 uniform bool noTextures;
 uniform bool useShadowMapping;
 uniform bool useFaceNormals;
+uniform bool useRayTracing;
+uniform float rtShadowWidth;
+uniform float rtShadowHeight;
+uniform float screenWidth;  
+uniform float screenHeight;
+uniform mat4 lightSpaceMatrix;  // Добавляем uniform для матрицы пространства света
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 lightDirNorm, vec3 norm)
 {
@@ -115,10 +121,25 @@ void main()
             specular = specularStrength * spec * effectiveLightColor;
         }
 
-        //float shadow = (lightingMode == 3 || lightingMode == 4 || lightingMode == 5) ? ShadowCalculation(FragPosLightSpace, lightDirNorm, norm) : 0.0;
-        
-        float shadow = ((lightingMode == 3 || lightingMode == 4 || lightingMode == 5) && useShadowMapping) ? 
-            ShadowCalculation(FragPosLightSpace, lightDirNorm, effectiveNormal) : 0.0;
+        float shadow = 0.0;
+        if (lightingMode == 3 || lightingMode == 4 || lightingMode == 5) { // SPOTLIGHT, DIRECTIONAL, или POINT
+            if (useShadowMapping) {
+               shadow = ShadowCalculation(FragPosLightSpace, lightDirNorm, effectiveNormal);
+            }
+            else if (useRayTracing) {
+                vec2 texCoord;
+                // Используем проекцию из мирового пространства в пространство экрана
+                vec4 projCoord = lightSpaceMatrix * vec4(FragPos, 1.0);
+                projCoord.xyz /= projCoord.w;
+                projCoord.xyz = projCoord.xyz * 0.5 + 0.5;
+    
+                float currentDepth = projCoord.z;
+                float shadowValue = texture(shadowMap, projCoord.xy).r;
+    
+                shadow = (shadowValue < 0.5) ? 1.0 : 0.0;
+            }
+        }
+
         if (lightingMode == 3) { // SPOTLIGHT
             float theta = dot(lightDirNorm, normalize(-lightDir));
             float epsilon = spotCutOff - spotOuterCutOff;

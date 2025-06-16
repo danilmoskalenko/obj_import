@@ -45,6 +45,25 @@ public:
          meshes[i].Draw(shader, reservedTextureUnit);
    }
 
+   glm::vec3 GetBoundingSphere() const {
+      glm::vec3 minBounds(std::numeric_limits<float>::max());
+      glm::vec3 maxBounds(std::numeric_limits<float>::lowest());
+
+      // Находим границы модели
+      for (const auto& mesh : meshes) {
+         for (const auto& vertex : mesh.vertices) {
+            minBounds = glm::min(minBounds, vertex.Position);
+            maxBounds = glm::max(maxBounds, vertex.Position);
+         }
+      }
+
+      // Вычисляем радиус как половину диагонали
+      glm::vec3 diagonal = maxBounds - minBounds;
+      float radius = glm::length(diagonal) * 0.5f;
+
+      // Возвращаем вектор, где x,y,z - центр сферы, а длина вектора - радиус
+      return (maxBounds + minBounds) * 0.5f + glm::vec3(radius);
+   }
 private:
    // Загружаем модель с помощью Assimp и сохраняем полученные меши в векторе meshes
    void loadModel(string const& path)
@@ -126,16 +145,24 @@ private:
             vertex.TexCoords = glm::vec2(0.0f, 0.0f);
 
          // Касательный вектор
-         vector.x = mesh->mTangents[i].x;
-         vector.y = mesh->mTangents[i].y;
-         vector.z = mesh->mTangents[i].z;
-         vertex.Tangent = vector;
+         if (mesh->mTangents) {
+            vector.x = mesh->mTangents[i].x;
+            vector.y = mesh->mTangents[i].y;
+            vector.z = mesh->mTangents[i].z;
+            vertex.Tangent = vector;
+         } else {
+            vertex.Tangent = glm::vec3(0.0f, 0.0f, 0.0f); // Default or fallback value
+         }
 
          // Вектор бинормали
-         vector.x = mesh->mBitangents[i].x;
-         vector.y = mesh->mBitangents[i].y;
-         vector.z = mesh->mBitangents[i].z;
-         vertex.Bitangent = vector;
+         if (mesh->mBitangents) {
+            vector.x = mesh->mBitangents[i].x;
+            vector.y = mesh->mBitangents[i].y;
+            vector.z = mesh->mBitangents[i].z;
+            vertex.Bitangent = vector;
+         } else {
+            vertex.Bitangent = glm::vec3(0.0f, 0.0f, 0.0f); // Default or fallback value
+         }
          vertices.push_back(vertex);
       }
       // Теперь проходимся по каждой грани меша (грань - это треугольник меша) и извлекаем соответствующие индексы вершин
