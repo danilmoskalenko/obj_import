@@ -9,13 +9,14 @@
 #include "camera.h"
 #include "model.h"
 #include "imgui.h"
+#include "geometry.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <filesystem>
 #include <iostream>
 #include <vector>
-#include "geometry.h"
 #include <algorithm>
+#include "scene.h"
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
@@ -33,19 +34,7 @@ const int SHADOW_TEX_UNIT = 1;
 const unsigned int RT_SHADOW_WIDTH = 960;  // в 4 раза меньше
 const unsigned int RT_SHADOW_HEIGHT = 540;  // в 4 раза меньше
 
-// Генерация текстуры для Ray Tracing результатов
-GLuint CreateRayTracingTexture(int width, int height) {
-   GLuint textureID;
-   glGenTextures(1, &textureID);
-   glBindTexture(GL_TEXTURE_2D, textureID);
-   std::vector<unsigned char> initialData(width * height, 255);
-   glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, initialData.data());
-   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-   return textureID;
-}
+unsigned int mirrorFBO, mirrorTexture, mirrorRBO;
 
 // Camera
 Camera camera;
@@ -57,23 +46,11 @@ bool firstMouse = true;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// Display and lighting modes
-enum DisplayMode { NORMAL_MODE, FACE_NORMALS, VERTEX_NORMALS };
+
 DisplayMode displayMode = NORMAL_MODE;
-
-enum LightingMode { NONE, NO_LIGHTING, AMBIENT, SPOTLIGHT, DIRECTIONAL, POINT };
 LightingMode lightingMode = NONE;
-
-// Shadow modes
-enum ShadowMode { SHADOW_NONE, SHADOW_MAPPING, SHADOW_RAYTRACING };
 ShadowMode shadowMode = SHADOW_NONE;
-
-// Типы используемых нормалей для теней
-enum ShadowNormalType { SHADOW_VERTEX_NORMALS, SHADOW_FACE_NORMALS };
 ShadowNormalType shadowNormalType = SHADOW_VERTEX_NORMALS;
-
-// Camera modes
-using CameraMode = ::CameraMode; // Используем enum из camera.h
 CameraMode cameraMode = BLENDER;
 
 const glm::vec3 INITIAL_LIGHT_POS(0.0f, 10.0f, 0.0f); // Изначальная позиция света
@@ -82,20 +59,9 @@ const glm::vec3 INITIAL_LIGHT_POS(0.0f, 10.0f, 0.0f); // Изначальная позиция све
 glm::vec3 objectRotation(0.0f);
 glm::quat objectOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
 
-struct SceneObject {
-   std::string name;
-   Model model;
-   glm::vec3 position = glm::vec3(0.0f);
-   glm::vec3 rotation = glm::vec3(0.0f);
-   glm::vec3 scale = glm::vec3(1.0f);
-   bool collision = true;
-};
-
 std::vector<SceneObject> sceneObjects;
 int selectedObjectIndex = -1;
-
 bool editSceneMode = true;
-
 bool noTextures = false; // Флаг для отключения текстур
 
 glm::vec3 ComputeSceneCenter() {
@@ -111,6 +77,20 @@ glm::vec3 ComputeSceneCenter() {
    return validObjects > 0 ? sum / static_cast<float>(validObjects) : glm::vec3(0.0f);
 }
 
+// Генерация текстуры для Ray Tracing результатов
+GLuint CreateRayTracingTexture(int width, int height) {
+   GLuint textureID;
+   glGenTextures(1, &textureID);
+   glBindTexture(GL_TEXTURE_2D, textureID);
+   std::vector<unsigned char> initialData(width * height, 255);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, initialData.data());
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+   return textureID;
+}
+
 bool TraceShadowRay(const glm::vec3& start, const glm::vec3& end, const std::vector<SceneObject>& objects, const SceneObject* ignoreObject) {
    glm::vec3 direction = glm::normalize(end - start);
    float lightDistance = glm::length(end - start);
@@ -119,7 +99,7 @@ bool TraceShadowRay(const glm::vec3& start, const glm::vec3& end, const std::vec
    // Сортируем объекты по расстоянию до начала луча
    std::vector<std::pair<float, const SceneObject*>> sortedObjects;
    for (const auto& obj : objects) {
-      if (!obj.collision || &obj == ignoreObject) continue;
+      if (&obj == ignoreObject) continue;
       float dist = glm::length(obj.position - start);
       sortedObjects.push_back({ dist, &obj });
    }
@@ -247,12 +227,34 @@ int main()
    Shader shaderNormalFace("line_vertex_shader.glsl", "line_fragment_shader.glsl");
    Shader shaderNormalVertex("v_line_vertex_shader.glsl", "v_line_fragment_shader.glsl");
    Shader lightShader("light_vertex_shader.glsl", "light_fragment_shader.glsl");
+   Shader mirrorShader("shaders/mirror.vs", "shaders/mirror.fs");
 
    static std::string modelPath = "resources/objects/Crate/Crate1.obj";
    Model ourModel(modelPath);
 
    std::vector<glm::vec3> faceNormalLines;
    std::vector<glm::vec3> vertexNormalLines;
+
+
+   std::vector<Vertex> mirrorVertices = {
+       {{-1.0f, -1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}}, // Левый нижний
+       {{ 1.0f, -1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}}, // Правый нижний
+       {{ 1.0f,  1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}}, // Правый верхний
+       {{-1.0f,  1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}}  // Левый верхний
+   };
+   std::vector<unsigned int> mirrorIndices = { 0, 1, 2, 2, 3, 0 };
+   std::vector<Texture> mirrorTextures; // Пока без текстур
+   Mesh mirrorMesh(mirrorVertices, mirrorIndices, mirrorTextures);
+   Model mirrorModel; // Пустой конструктор без файла
+   mirrorModel.meshes.clear(); // Удаляем любые дефолтные меши
+   mirrorModel.meshes.push_back(mirrorMesh); // Добавляем наш меш
+   SceneObject mirror;
+   mirror.name = "mirror"; // Имя для идентификации зеркала
+   mirror.model = mirrorModel;
+   mirror.position = glm::vec3(0.0f, 0.0f, -5.0f);
+   mirror.scale = glm::vec3(2.0f, 2.0f, 1.0f);
+   sceneObjects.push_back(mirror);
+
 
    for (auto& mesh : ourModel.meshes) {
       for (size_t i = 0; i < mesh.indices.size(); i += 3) {
@@ -313,6 +315,43 @@ int main()
    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
    glBindVertexArray(0);
 
+   // Инициализация FBO для зеркала
+   unsigned int mirrorFBO;
+   glGenFramebuffers(1, &mirrorFBO);
+
+   // Вычисление отраженной камеры
+   glm::vec3 mirrorPos = mirror.position;
+   glm::vec3 mirrorNormal = glm::normalize(mirror.mirrorNormal);
+   glm::vec3 cameraToMirror = camera.Position - mirrorPos;
+   float distance = glm::dot(cameraToMirror, mirrorNormal);
+   glm::vec3 reflectedCameraPos = camera.Position - 2.0f * distance * mirrorNormal;
+   glm::vec3 reflectedFront = glm::reflect(camera.Front, mirrorNormal);
+   glm::vec3 reflectedUp = glm::reflect(camera.Up, mirrorNormal);
+   glm::mat4 reflectedView = glm::lookAt(reflectedCameraPos, reflectedCameraPos + reflectedFront, reflectedUp);
+   glBindFramebuffer(GL_FRAMEBUFFER, mirrorFBO);
+
+   // Создание текстуры для отражения
+   unsigned int mirrorTexture;
+   glGenTextures(1, &mirrorTexture);
+   glBindTexture(GL_TEXTURE_2D, mirrorTexture);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mirrorTexture, 0);
+
+   // Создание буфера глубины
+   unsigned int mirrorRBO;
+   glGenRenderbuffers(1, &mirrorRBO);
+   glBindRenderbuffer(GL_RENDERBUFFER, mirrorRBO);
+   glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
+   glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, mirrorRBO);
+
+   // Проверка FBO
+   if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+      std::cout << "Framebuffer is not complete!" << std::endl;
+   }
+   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
    glm::vec3 lightPos = INITIAL_LIGHT_POS;
    glm::vec3 lightDir(0.0f, -1.0f, 0.0f);
    glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
@@ -323,8 +362,6 @@ int main()
    float diffuseStrength = 1.0f;
    float specularStrength = 0.2f;
    float shininess = 8.0f;
-   float spotCutOff = glm::cos(glm::radians(12.5f));
-   float spotOuterCutOff = glm::cos(glm::radians(17.5f));
 
    char modelPathInput[256] = "resources/objects/Crate/Crate1.obj";
    bool reloadModel = false;
@@ -544,9 +581,6 @@ int main()
          ImGui::Text("%s", label.c_str());
 
          ImGui::SameLine();
-         ImGui::Checkbox(("##collision" + std::to_string(i)).c_str(), &obj.collision);
-
-         ImGui::SameLine();
          if (ImGui::Button(("Delete##" + std::to_string(i)).c_str())) {
             sceneObjects.erase(sceneObjects.begin() + i);
             if (selectedObjectIndex == i) selectedObjectIndex = -1;
@@ -554,6 +588,7 @@ int main()
             break;
          }
       }
+
       ImGui::End();
 
       if (reloadModel) {
@@ -640,20 +675,132 @@ int main()
          obj.model.Draw(depthShader);
       }
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
       glDisable(GL_POLYGON_OFFSET_FILL);
-
-      glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
       glClearColor(backgroundColor.r, backgroundColor.g, backgroundColor.b, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-      ourShader.use();
+      // === 1. Рендер сцены в текстуру (отражение в mirror) ===
+      glBindFramebuffer(GL_FRAMEBUFFER, mirrorFBO);
+      glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glEnable(GL_DEPTH_TEST);
+
+      // Матрица проекции (одна и та же)
       glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+      glm::mat4 reflectedView;
+
+      // Найдём объект-зеркало
+      SceneObject* mirrorPtr = nullptr;
+      for (SceneObject& obj : sceneObjects) {
+         if (obj.name == "mirror") {
+            mirrorPtr = &obj;
+            break;
+         }
+      }
+
+      if (mirrorPtr) {
+         SceneObject& mirror = *mirrorPtr;
+
+         // 1. Вычисление нормали зеркала в мировых координатах
+         glm::mat4 rotMat = glm::mat4(1.0f);
+         rotMat = glm::rotate(rotMat, glm::radians(mirror.rotation.x), glm::vec3(1, 0, 0));
+         rotMat = glm::rotate(rotMat, glm::radians(mirror.rotation.y), glm::vec3(0, 1, 0));
+         rotMat = glm::rotate(rotMat, glm::radians(mirror.rotation.z), glm::vec3(0, 0, 1));
+
+         // Локальная нормаль зеркала — Z-ось (для XY-плоскости)
+         glm::vec3 mirrorNormal = glm::normalize(glm::vec3(rotMat * glm::vec4(0, 0, 1, 0)));
+         mirror.mirrorNormal = mirrorNormal;  // обновим в структуре на всякий случай
+
+         // 2. Отразим позицию камеры относительно плоскости зеркала
+         glm::vec3 cameraPos = camera.Position;
+         glm::vec3 mirrorPoint = mirror.position;
+
+         glm::vec3 reflectedCameraPos = cameraPos - 2.0f * glm::dot(cameraPos - mirrorPoint, mirrorNormal) * mirrorNormal;
+
+         // 3. Отразим направления
+         glm::vec3 reflectedFront = camera.Front - 2.0f * glm::dot(camera.Front, mirrorNormal) * mirrorNormal;
+         glm::vec3 reflectedUp = camera.Up - 2.0f * glm::dot(camera.Up, mirrorNormal) * mirrorNormal;
+
+         // 4. Построим отражённую матрицу вида
+         reflectedView = glm::lookAt(reflectedCameraPos, reflectedCameraPos + reflectedFront, reflectedUp);
+
+         // 5. Лог для проверки по оси Z
+         std::cout << "Camera Z: " << cameraPos.z << std::endl;
+         std::cout << "Mirror Z: " << mirrorPoint.z << std::endl;
+         std::cout << "Normal Z: " << mirrorNormal.z << std::endl;
+         std::cout << "ReflectedCameraPos Z: " << reflectedCameraPos.z << std::endl;
+
+
+         // 1.2 Рендер всех объектов КРОМЕ зеркала в mirrorFBO
+         for (const SceneObject& obj : sceneObjects) {
+            if (obj.name == "mirror") continue; // не рисуем зеркало в его отражении
+
+            ourShader.use();
+            ourShader.setMat4("projection", projection);
+            ourShader.setMat4("view", reflectedView);
+
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, obj.position);
+            model = glm::rotate(model, glm::radians(obj.rotation.x), glm::vec3(1, 0, 0));
+            model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
+            model = glm::rotate(model, glm::radians(obj.rotation.z), glm::vec3(0, 0, 1));
+            model = glm::scale(model, obj.scale);
+
+            ourShader.setMat4("model", model);
+            obj.model.Draw(ourShader);
+         }
+
+         // Отвязываем текстуры после рендеринга в FBO
+         glActiveTexture(GL_TEXTURE0);
+         glBindTexture(GL_TEXTURE_2D, 0);
+      }
+
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+      // === 2. Рендер финальной сцены на экран ===
+      glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      glEnable(GL_DEPTH_TEST);
+
+      // Основной вид камеры
       glm::mat4 view = camera.GetViewMatrix();
+      glm::mat4 reflectedProjection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+
+      // 2.1 Рендер всех объектов (включая зеркало)
+      for (const SceneObject& obj : sceneObjects) {
+         glm::mat4 model = glm::mat4(1.0f);
+         model = glm::translate(model, obj.position);
+         model = glm::rotate(model, glm::radians(obj.rotation.x), glm::vec3(1, 0, 0));
+         model = glm::rotate(model, glm::radians(obj.rotation.y), glm::vec3(0, 1, 0));
+         model = glm::rotate(model, glm::radians(obj.rotation.z), glm::vec3(0, 0, 1));
+         model = glm::scale(model, obj.scale);
+
+         if (obj.name == "mirror") {
+            // Рендер зеркала (используем проекцию с текстурой)
+            // Используем GL_TEXTURE1 для mirrorTexture
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, mirrorTexture);
+            mirrorShader.use();
+            mirrorShader.setMat4("model", model);               // модель зеркала
+            mirrorShader.setMat4("view", view);                 // обычная камера
+            mirrorShader.setMat4("projection", projection);     // обычная проекция
+            mirrorShader.setMat4("reflectedView", reflectedView);         // из отражённой камеры
+            mirrorShader.setMat4("reflectedProj", reflectedProjection);   // правильная проекция
+            mirrorShader.setInt("mirrorTexture", 1);            // если текстура привязана к GL_TEXTURE1 // Указываем юнит 1 для текстуры зеркала
+
+            obj.model.Draw(mirrorShader);
+         }
+         else {
+            // Остальные объекты
+            ourShader.use();
+            ourShader.setMat4("model", model);
+            ourShader.setMat4("view", view);
+            ourShader.setMat4("projection", projection);
+            obj.model.Draw(ourShader);
+         }
+      }
 
       glm::mat4 invProjection = glm::inverse(projection);
       glm::mat4 invView = glm::inverse(view);
-
       // Ray Tracing
       if (shadowMode == SHADOW_RAYTRACING && (lightingMode == POINT || lightingMode == SPOTLIGHT || lightingMode == DIRECTIONAL)) {
          std::vector<unsigned char> shadowData(RT_SHADOW_WIDTH * RT_SHADOW_HEIGHT, 255);
@@ -747,7 +894,7 @@ int main()
                std::cout << "Object " << i << " (" << obj.name << "): Position ["
                   << obj.position.x << ", " << obj.position.y << ", " << obj.position.z
                   << "], Scale [" << obj.scale.x << ", " << obj.scale.y << ", " << obj.scale.z
-                  << "], Collision: " << (obj.collision ? "true" : "false") << std::endl;
+                  << std::endl;
             }
          }
 
@@ -767,8 +914,6 @@ int main()
       ourShader.setFloat("diffuseStrength", diffuseStrength);
       ourShader.setFloat("specularStrength", specularStrength);
       ourShader.setFloat("shininess", shininess);
-      ourShader.setFloat("spotCutOff", spotCutOff);
-      ourShader.setFloat("spotOuterCutOff", spotOuterCutOff);
       ourShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
       ourShader.setBool("noTextures", noTextures);
       ourShader.setBool("useRayTracing", shadowMode == SHADOW_RAYTRACING);
@@ -830,6 +975,8 @@ int main()
          glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(sphereIndices.size()), GL_UNSIGNED_INT, 0);
          glBindVertexArray(0);
       }
+
+
 
       if (editSceneMode && (displayMode == FACE_NORMALS || displayMode == VERTEX_NORMALS)) {
          std::vector<glm::vec3> allFaceNormalLines;

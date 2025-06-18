@@ -20,8 +20,6 @@ uniform float ambientStrength;
 uniform float diffuseStrength;
 uniform float specularStrength;
 uniform float shininess;
-uniform float spotCutOff;
-uniform float spotOuterCutOff;
 uniform bool noTextures;
 uniform bool useShadowMapping;
 uniform bool useFaceNormals;
@@ -30,7 +28,7 @@ uniform float rtShadowWidth;
 uniform float rtShadowHeight;
 uniform float screenWidth;  
 uniform float screenHeight;
-uniform mat4 lightSpaceMatrix;  // Добавляем uniform для матрицы пространства света
+uniform mat4 lightSpaceMatrix;
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 lightDirNorm, vec3 norm)
 {
@@ -64,17 +62,15 @@ void main()
     if (length(norm) < 0.001) {
         norm = vec3(0.0, 1.0, 0.0);
     }
-    vec3 effectiveNormal; // Нормали, которые будут использоваться для вычисления теней
+    vec3 effectiveNormal;
     if (useFaceNormals) {
-      // Ищем центр текущего треугольника и его нормаль
-      vec3 v1 = dFdx(FragPos);
-      vec3 v2 = dFdy(FragPos);
-      effectiveNormal = normalize(cross(v1, v2));
+        vec3 v1 = dFdx(FragPos);
+        vec3 v2 = dFdy(FragPos);
+        effectiveNormal = normalize(cross(v1, v2));
     } else {
-      // Используем уже имеющиеся vertex normals из меша
-      effectiveNormal = normalize(Normal);
+        effectiveNormal = normalize(Normal);
     }
-    // Получаем базовый цвет из текстуры или из uniform-переменной
+
     vec4 texColor;
     if (noTextures) {
         texColor = vec4(objectColor, 1.0);
@@ -99,11 +95,11 @@ void main()
 
         vec3 lightDirNorm;
         float attenuation = 1.0;
-        if (lightingMode == 3 || lightingMode == 5) { // SPOTLIGHT or POINT
+        if (lightingMode == 5) { // POINT
             lightDirNorm = normalize(lightPos - FragPos);
             float distance = length(lightPos - FragPos);
             attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
-        } else { // DIRECTIONAL
+        } else { // DIRECTIONAL (4) or others
             lightDirNorm = normalize(-lightDir);
             if (length(lightDirNorm) < 0.001) {
                 lightDirNorm = vec3(0.0, -1.0, 0.0);
@@ -114,7 +110,7 @@ void main()
         vec3 diffuse = diffuseStrength * lambertFactor * effectiveLightColor * texColor.rgb * objectColor;
 
         vec3 specular = vec3(0.0);
-        if (lightingMode == 3 || lightingMode == 4 || lightingMode == 5) { // SPOTLIGHT, DIRECTIONAL, or POINT
+        if (lightingMode == 4 || lightingMode == 5) { // DIRECTIONAL or POINT
             vec3 viewDir = normalize(viewPos - FragPos);
             vec3 reflectDir = reflect(-lightDirNorm, norm);
             float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
@@ -122,13 +118,12 @@ void main()
         }
 
         float shadow = 0.0;
-        if (lightingMode == 3 || lightingMode == 4 || lightingMode == 5) { // SPOTLIGHT, DIRECTIONAL, или POINT
+        if (lightingMode == 4 || lightingMode == 5) { // DIRECTIONAL or POINT
             if (useShadowMapping) {
                shadow = ShadowCalculation(FragPosLightSpace, lightDirNorm, effectiveNormal);
             }
             else if (useRayTracing) {
                 vec2 texCoord;
-                // Используем проекцию из мирового пространства в пространство экрана
                 vec4 projCoord = lightSpaceMatrix * vec4(FragPos, 1.0);
                 projCoord.xyz /= projCoord.w;
                 projCoord.xyz = projCoord.xyz * 0.5 + 0.5;
@@ -140,13 +135,6 @@ void main()
             }
         }
 
-        if (lightingMode == 3) { // SPOTLIGHT
-            float theta = dot(lightDirNorm, normalize(-lightDir));
-            float epsilon = spotCutOff - spotOuterCutOff;
-            float intensity = clamp((theta - spotOuterCutOff) / epsilon, 0.0, 1.0);
-            diffuse *= intensity;
-            specular *= intensity;
-        }
         result = (ambient + (1.0 - shadow) * (diffuse + specular)) * attenuation * texColor.rgb * objectColor;
     }
 

@@ -58,20 +58,20 @@ public:
    }
 
    // Рендеринг меша
-   void Draw(const Shader& shader, int reservedTextureUnit = -1) const
-   {
-      // Связываем соответствующие текстуры
-      if (!this->noTextures) {  // Используем this-> для доступа к члену класса
+   void Draw(const Shader& shader, bool useTextures, int reservedTextureUnit = -1) const {
+      if (useTextures) {
+         // Связываем соответствующие текстуры
          unsigned int diffuseNr = 1;
          unsigned int specularNr = 1;
          unsigned int normalNr = 1;
          unsigned int heightNr = 1;
-         for (unsigned int i = 0; i < textures.size(); i++)
-         {
-            unsigned int unit = i;
-            if (reservedTextureUnit >= 0 && unit >= (unsigned int)reservedTextureUnit)
-               unit++;
-            glActiveTexture(GL_TEXTURE0 + unit);
+
+         for (unsigned int i = 0; i < textures.size(); i++) {
+            if (reservedTextureUnit >= 0 && i == reservedTextureUnit)
+               continue;
+
+            glActiveTexture(GL_TEXTURE0 + i);
+
             string number;
             string name = textures[i].type;
             if (name == "texture_diffuse")
@@ -83,18 +83,22 @@ public:
             else if (name == "texture_height")
                number = std::to_string(heightNr++);
 
-            glUniform1i(glGetUniformLocation(shader.ID, (name + number).c_str()), unit);
+            shader.setInt(("material." + name + number).c_str(), i);
             glBindTexture(GL_TEXTURE_2D, textures[i].id);
          }
       }
+      else {
+         shader.setVec3("material.ambient", glm::vec3(0.1f));
+         shader.setVec3("material.diffuse", glm::vec3(0.0f));
+         shader.setVec3("material.specular", glm::vec3(1.0f));
+         shader.setFloat("material.shininess", 32.0f);
 
-      // Отрисовываем меш
+      }
+
+      // Отрисовка меша
       glBindVertexArray(VAO);
-      glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+      glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(indices.size()), GL_UNSIGNED_INT, 0);
       glBindVertexArray(0);
-
-      // Сбрасываем значения к исходным
-      glActiveTexture(GL_TEXTURE0);
    }
 
 private:

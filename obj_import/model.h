@@ -31,7 +31,9 @@ public:
    vector<Mesh> meshes;
    string directory;
    bool gammaCorrection;
+   bool useOriginalTextures = true;
 
+   Model() : gammaCorrection(false), useOriginalTextures(true) {}
    // Конструктор в качестве аргумента использует путь к 3D-модели
    Model(string const& path, bool gamma = false) : gammaCorrection(gamma)
    {
@@ -39,10 +41,14 @@ public:
    }
 
    // Отрисовываем модель, а значит и все её меши
-   void Draw(const Shader& shader, int reservedTextureUnit = -1) const
-   {
-      for (unsigned int i = 0; i < meshes.size(); i++)
-         meshes[i].Draw(shader, reservedTextureUnit);
+   void Draw(const Shader& shader, int reservedTextureUnit = -1) const {
+      for (unsigned int i = 0; i < meshes.size(); i++) {
+         meshes[i].Draw(shader, useOriginalTextures, reservedTextureUnit);
+      }
+   }
+
+   void setUseOriginalTextures(bool use) {
+      useOriginalTextures = use;
    }
 
    glm::vec3 GetBoundingSphere() const {
